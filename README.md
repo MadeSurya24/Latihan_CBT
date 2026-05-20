@@ -51,8 +51,8 @@ Pengaturan umum:
 
 File `vercel.json` dan `public/_redirects` sudah disiapkan agar aplikasi tetap aman jika dibuka sebagai single page app.
 
-## Catatan histori peserta
+## Catatan histori regu
 
-Histori peserta saat ini disimpan di `localStorage`, artinya data tersimpan pada browser/perangkat yang digunakan. Jika website dipakai publik dari banyak perangkat, histori setiap perangkat tidak otomatis terkumpul di satu admin pusat.
+Histori regu saat ini disimpan di `localStorage`, artinya data tersimpan pada browser/perangkat yang digunakan. Jika website dipakai publik dari banyak perangkat, histori setiap perangkat tidak otomatis terkumpul di satu admin pusat.
 
-Untuk histori terpusat dari semua peserta, proyek perlu ditambah backend/database seperti Firebase, Supabase, atau server sendiri.
+Untuk histori terpusat dari semua regu, proyek perlu ditambah backend/database seperti Firebase, Supabase, atau server sendiri.

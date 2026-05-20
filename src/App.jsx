@@ -165,7 +165,7 @@ function App() {
   }
 
   function clearHistory() {
-    const confirmed = window.confirm('Hapus semua histori pengerjaan peserta di browser ini?');
+    const confirmed = window.confirm('Hapus semua histori pengerjaan regu di browser ini?');
     if (!confirmed) return;
     window.localStorage.removeItem(HISTORY_STORAGE_KEY);
     setAttemptHistory([]);
@@ -194,31 +194,31 @@ function App() {
               <BookOpen size={26} aria-hidden="true" />
             </div>
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-700">CBT Simulasi Bank Soal</p>
-            <h1 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl">Login Peserta</h1>
+            <h1 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl">Login Regu</h1>
             <p className="mt-2 text-sm leading-6 text-slate-600">
-              Masukkan identitas peserta untuk masuk ke halaman instruksi ujian.
+              Masukkan identitas regu untuk masuk ke halaman instruksi ujian.
             </p>
           </div>
 
           <form className="space-y-4" onSubmit={startInstructions}>
             <label className="block">
-              <span className="text-sm font-semibold text-slate-700">Nama peserta</span>
+              <span className="text-sm font-semibold text-slate-700">Nama regu</span>
               <input
                 required
                 value={participant.name}
                 onChange={(event) => setParticipant((value) => ({ ...value, name: event.target.value }))}
                 className="mt-2 w-full rounded-md border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
-                placeholder="Contoh: Alya Putri"
+                placeholder="Contoh: Regu Garuda"
               />
             </label>
             <label className="block">
-              <span className="text-sm font-semibold text-slate-700">Nomor peserta</span>
+              <span className="text-sm font-semibold text-slate-700">Nomor regu</span>
               <input
                 required
                 value={participant.number}
                 onChange={(event) => setParticipant((value) => ({ ...value, number: event.target.value }))}
                 className="mt-2 w-full rounded-md border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
-                placeholder="Contoh: 26050123"
+                placeholder="Contoh: 01"
               />
             </label>
             <button className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-700 px-4 py-3 font-semibold text-white transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-200">
@@ -231,7 +231,7 @@ function App() {
               className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-800 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-blue-100"
             >
               <History size={19} aria-hidden="true" />
-              Histori Peserta
+              Histori Regu
             </button>
           </form>
         </section>
@@ -247,7 +247,7 @@ function App() {
             <div className="flex flex-col gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
               <div>
                 <p className="text-sm font-semibold text-blue-700">Admin</p>
-                <h1 className="mt-2 text-2xl font-bold text-slate-950">Histori Pengerjaan Peserta</h1>
+                <h1 className="mt-2 text-2xl font-bold text-slate-950">Histori Pengerjaan Regu</h1>
                 <p className="mt-1 text-sm text-slate-600">
                   Tersimpan lokal di browser ini. Total percobaan: {attemptHistory.length}
                 </p>
@@ -277,7 +277,7 @@ function App() {
                   <History size={24} aria-hidden="true" />
                 </div>
                 <h2 className="mt-4 text-lg font-bold text-slate-950">Belum ada histori</h2>
-                <p className="mt-2 text-sm text-slate-600">Data akan muncul otomatis setelah peserta submit ujian.</p>
+                <p className="mt-2 text-sm text-slate-600">Data akan muncul otomatis setelah regu submit ujian.</p>
               </div>
             ) : (
               <div className="grid gap-0 lg:grid-cols-[420px_1fr]">
@@ -327,7 +327,7 @@ function App() {
                         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-md bg-blue-50 text-blue-700">
                           <Eye size={24} aria-hidden="true" />
                         </div>
-                        <h2 className="mt-4 text-lg font-bold text-slate-950">Pilih peserta</h2>
+                        <h2 className="mt-4 text-lg font-bold text-slate-950">Pilih regu</h2>
                         <p className="mt-2 text-sm text-slate-600">Klik salah satu histori di kiri untuk melihat rincian jawaban.</p>
                       </div>
                     </div>
@@ -350,8 +350,8 @@ function App() {
               <p className="text-sm font-semibold text-blue-700">{examConfig.subject}</p>
               <h1 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl">{examConfig.title}</h1>
               <div className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-3">
-                <Info label="Peserta" value={participant.name} />
-                <Info label="Nomor" value={participant.number} />
+                <Info label="Regu" value={participant.name} />
+                <Info label="Nomor Regu" value={participant.number} />
                 <Info label="Durasi" value={`${examConfig.durationMinutes} menit`} />
               </div>
             </div>
@@ -397,7 +397,7 @@ function App() {
             <div>
               <p className="text-sm font-semibold text-blue-700">Hasil Ujian</p>
               <h1 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl">{participant.name}</h1>
-              <p className="mt-1 text-sm text-slate-600">Nomor peserta: {participant.number}</p>
+              <p className="mt-1 text-sm text-slate-600">Nomor regu: {participant.number}</p>
             </div>
             <div className="rounded-lg bg-blue-700 px-6 py-4 text-center text-white">
               <p className="text-sm font-semibold text-blue-100">Skor</p>
@@ -526,7 +526,7 @@ function App() {
                             <div className="min-w-0 flex-1">
                               <p className="text-sm leading-6">{value}</p>
                               {correct ? <p className="mt-1 text-xs font-bold text-green-700">Jawaban benar</p> : null}
-                              {selected && !correct ? <p className="mt-1 text-xs font-bold text-red-700">Jawaban peserta</p> : null}
+                              {selected && !correct ? <p className="mt-1 text-xs font-bold text-red-700">Jawaban regu</p> : null}
                             </div>
                           </div>
                         );
@@ -535,7 +535,7 @@ function App() {
 
                     <div className="mt-4 rounded-md bg-slate-50 p-3 text-sm leading-6 text-slate-700">
                       <p>
-                        Jawaban peserta:{' '}
+                        Jawaban regu:{' '}
                         <span className="font-bold text-slate-950">
                           {chosen ? `${chosen}. ${question.options[chosen]}` : 'Tidak dijawab'}
                         </span>
@@ -874,9 +874,9 @@ function HistoryDetail({ attempt }) {
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-blue-700">Detail Peserta</p>
+            <p className="text-sm font-semibold text-blue-700">Detail Regu</p>
             <h2 className="mt-1 text-xl font-bold text-slate-950">{attempt.participant.name}</h2>
-            <p className="mt-1 text-sm text-slate-600">Nomor peserta: {attempt.participant.number}</p>
+            <p className="mt-1 text-sm text-slate-600">Nomor regu: {attempt.participant.number}</p>
             <p className="mt-1 text-sm text-slate-600">Submit: {formatDateTime(attempt.finishedAt)}</p>
           </div>
           <div className="rounded-lg bg-blue-700 px-5 py-3 text-center text-white">
@@ -922,7 +922,7 @@ function HistoryDetail({ attempt }) {
 
               <div className="mt-4 rounded-md bg-slate-50 p-3 text-sm leading-6 text-slate-700">
                 <p>
-                  Jawaban peserta:{' '}
+                  Jawaban regu:{' '}
                   <span className="font-bold text-slate-950">
                     {chosen ? `${chosen}. ${question.options[chosen]}` : 'Tidak dijawab'}
                   </span>
