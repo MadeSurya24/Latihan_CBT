@@ -519,7 +519,12 @@ function App() {
   }
 
   async function deleteExam(id) {
-    const confirmed = window.confirm('Hapus paket soal ini beserta soal-soalnya? Nilai yang sudah masuk tetap tersimpan.');
+    if (adminExams.length <= 1) {
+      setAdminMessage('Tidak bisa menghapus satu-satunya paket soal. Buat paket lain terlebih dahulu.');
+      return;
+    }
+    const exam = adminExams.find((item) => item.id === id);
+    const confirmed = window.confirm(`Hapus permanen paket "${exam?.title || 'ini'}" beserta semua soalnya? Nilai yang sudah masuk tetap tersimpan.`);
     if (!confirmed) return;
     setAdminMessage('Menghapus paket soal...');
 
@@ -1164,7 +1169,7 @@ function AdminPage({
                   <h2 className="font-bold text-slate-950">{settingsForm.id ? 'Edit Paket' : 'Tambah Paket'}</h2>
                   {settingsForm.id ? (
                     <button type="button" onClick={() => deleteExam(settingsForm.id)} className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
-                      Hapus
+                      Hapus Permanen
                     </button>
                   ) : null}
                 </div>
