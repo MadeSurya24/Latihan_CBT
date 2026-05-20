@@ -51,8 +51,28 @@ Pengaturan umum:
 
 File `vercel.json` dan `public/_redirects` sudah disiapkan agar aplikasi tetap aman jika dibuka sebagai single page app.
 
+## Supabase untuk admin dan nilai terpusat
+
+Aplikasi mendukung mode Supabase agar admin bisa CRUD soal dan melihat nilai semua regu.
+
+1. Buka Supabase project.
+2. Masuk ke SQL Editor.
+3. Jalankan seluruh isi file `supabase/schema.sql`.
+4. Jalankan aplikasi, buka mode Admin, lalu buat akun admin.
+5. Buka Supabase Authentication > Users, copy UID akun admin.
+6. Jalankan query penanda admin yang ada di bagian bawah `supabase/schema.sql`.
+
+Environment variable yang perlu dipasang di Vercel:
+
+```text
+VITE_SUPABASE_URL=https://wxescpzqnlknqwxwuurg.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_zmatfjIqyNJqcEgTMuYgSg_LPxj1nja
+```
+
+Setelah environment variable dipasang, redeploy project di Vercel.
+
 ## Catatan histori regu
 
-Histori regu saat ini disimpan di `localStorage`, artinya data tersimpan pada browser/perangkat yang digunakan. Jika website dipakai publik dari banyak perangkat, histori setiap perangkat tidak otomatis terkumpul di satu admin pusat.
+Jika Supabase aktif, hasil regu tersimpan ke database dan bisa dilihat admin. Jika Supabase belum aktif atau schema belum dijalankan, aplikasi memakai data lokal sebagai fallback.
 
-Untuk histori terpusat dari semua regu, proyek perlu ditambah backend/database seperti Firebase, Supabase, atau server sendiri.
+Fallback lokal memakai `localStorage`, artinya data hanya tersimpan pada browser/perangkat yang digunakan.
