@@ -1,6 +1,6 @@
-# Simulasi CBT UTBK
+# CBT Simulasi Bank Soal
 
-Website simulasi CBT UTBK berbasis React, Vite, dan Tailwind CSS.
+Website CBT simulasi bank soal berbasis React, Vite, dan Tailwind CSS.
 
 ## Menjalankan di komputer sendiri
 

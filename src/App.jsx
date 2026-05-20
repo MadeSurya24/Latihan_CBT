@@ -193,7 +193,7 @@ function App() {
             <div className="mb-5 flex h-12 w-12 items-center justify-center rounded-md bg-blue-600 text-white">
               <BookOpen size={26} aria-hidden="true" />
             </div>
-            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-700">CBT UTBK</p>
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-700">CBT Simulasi Bank Soal</p>
             <h1 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl">Login Peserta</h1>
             <p className="mt-2 text-sm leading-6 text-slate-600">
               Masukkan identitas peserta untuk masuk ke halaman instruksi ujian.
