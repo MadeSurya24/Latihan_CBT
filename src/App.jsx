@@ -19,6 +19,7 @@ import {
   Save,
   Send,
   Trash2,
+  Upload,
   X,
 } from 'lucide-react';
 import { examConfig as localExamConfig, questions as localQuestions } from './questions.js';
@@ -37,11 +38,20 @@ const screen = {
 
 const emptyQuestionForm = {
   id: null,
+  exam_id: '',
   sort_order: 1,
   text: '',
   image: '',
   options: { A: '', B: '', C: '', D: '', E: '' },
   answer: 'A',
+  active: true,
+};
+
+const emptyExamForm = {
+  id: null,
+  title: '',
+  subject: 'Simulasi Pengetahuan Umum',
+  duration_minutes: 120,
   active: true,
 };
 
@@ -63,6 +73,7 @@ function formatDateTime(value) {
 function normalizeQuestion(question, index) {
   return {
     id: question.id ?? String(question.sort_order ?? index + 1),
+    exam_id: question.exam_id || 'local-day-10',
     sort_order: question.sort_order ?? index + 1,
     text: question.text,
     image: question.image || '',
@@ -72,8 +83,22 @@ function normalizeQuestion(question, index) {
   };
 }
 
+function normalizeExam(exam) {
+  return {
+    id: exam.id,
+    title: exam.title,
+    subject: exam.subject,
+    durationMinutes: exam.duration_minutes ?? exam.durationMinutes ?? 120,
+    active: exam.active ?? true,
+  };
+}
+
 function getLocalQuestions() {
-  return localQuestions.map((question, index) => normalizeQuestion({ ...question, sort_order: index + 1 }, index));
+  return localQuestions.map((question, index) => normalizeQuestion({ ...question, exam_id: 'local-day-10', sort_order: index + 1 }, index));
+}
+
+function getLocalExams() {
+  return [{ id: 'local-day-10', title: localExamConfig.title, subject: localExamConfig.subject, durationMinutes: localExamConfig.durationMinutes, active: true }];
 }
 
 function getLocalAttempts() {
@@ -104,6 +129,7 @@ function calculateResult(questionBank, answers) {
 function questionToForm(question) {
   return {
     id: question.id,
+    exam_id: question.exam_id,
     sort_order: question.sort_order,
     text: question.text,
     image: question.image || '',
@@ -127,6 +153,7 @@ function formToPayload(form) {
   );
 
   return {
+    exam_id: form.exam_id,
     sort_order: Number(form.sort_order),
     text: form.text.trim(),
     image: form.image.trim(),
@@ -139,6 +166,8 @@ function formToPayload(form) {
 function App() {
   const [page, setPage] = useState(screen.LOGIN);
   const [loginMode, setLoginMode] = useState('regu');
+  const [exams, setExams] = useState(getLocalExams);
+  const [selectedExamId, setSelectedExamId] = useState('local-day-10');
   const [settings, setSettings] = useState(localExamConfig);
   const [questionBank, setQuestionBank] = useState(getLocalQuestions);
   const [loadingData, setLoadingData] = useState(true);
@@ -159,14 +188,18 @@ function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminAuth, setAdminAuth] = useState({ email: '', password: '' });
   const [adminMessage, setAdminMessage] = useState('');
+  const [adminExams, setAdminExams] = useState([]);
+  const [selectedAdminExamId, setSelectedAdminExamId] = useState('');
   const [adminQuestions, setAdminQuestions] = useState([]);
   const [attempts, setAttempts] = useState([]);
   const [selectedAttempt, setSelectedAttempt] = useState(null);
   const [questionForm, setQuestionForm] = useState(emptyQuestionForm);
   const [settingsForm, setSettingsForm] = useState({
+    id: null,
     title: localExamConfig.title,
     subject: localExamConfig.subject,
     duration_minutes: localExamConfig.durationMinutes,
+    active: true,
   });
 
   const currentQuestion = questionBank[currentIndex];
@@ -181,11 +214,13 @@ function App() {
   useEffect(() => {
     setSecondsLeft((settings.durationMinutes || 120) * 60);
     setSettingsForm({
+      id: selectedExamId,
       title: settings.title,
       subject: settings.subject,
       duration_minutes: settings.durationMinutes,
+      active: settings.active ?? true,
     });
-  }, [settings]);
+  }, [settings, selectedExamId]);
 
   useEffect(() => {
     if (page !== screen.EXAM) return undefined;
@@ -201,11 +236,13 @@ function App() {
 
   const summary = useMemo(() => calculateResult(questionBank, answers), [answers, questionBank]);
 
-  async function loadPublicData() {
+  async function loadPublicData(targetExamId = selectedExamId) {
     setLoadingData(true);
     setDataMessage('');
 
     if (!isSupabaseConfigured) {
+      setExams(getLocalExams());
+      setSelectedExamId('local-day-10');
       setQuestionBank(getLocalQuestions());
       setSettings(localExamConfig);
       setDataMessage('Supabase belum dikonfigurasi. Aplikasi memakai data lokal.');
@@ -213,29 +250,70 @@ function App() {
       return;
     }
 
-    const [{ data: settingsRows, error: settingsError }, { data: rows, error: questionsError }] = await Promise.all([
-      supabase.from('exam_settings').select('*').eq('id', 1).maybeSingle(),
-      supabase.from('questions').select('*').eq('active', true).order('sort_order', { ascending: true }),
-    ]);
+    const { data: examRows, error: examsError } = await supabase
+      .from('exams')
+      .select('*')
+      .eq('active', true)
+      .order('created_at', { ascending: true });
 
-    if (settingsError || questionsError) {
+    if (examsError || !examRows?.length) {
+      const [{ data: settingsRows }, { data: rows }] = await Promise.all([
+        supabase.from('exam_settings').select('*').eq('id', 1).maybeSingle(),
+        supabase.from('questions').select('*').eq('active', true).order('sort_order', { ascending: true }),
+      ]);
+      if (settingsRows && rows) {
+        setExams([{ id: 'legacy', title: settingsRows.title, subject: settingsRows.subject, durationMinutes: settingsRows.duration_minutes, active: true }]);
+        setSelectedExamId('legacy');
+        setSettings({
+          title: settingsRows.title,
+          subject: settingsRows.subject,
+          durationMinutes: settingsRows.duration_minutes,
+          active: true,
+        });
+        setQuestionBank((rows || []).map(normalizeQuestion));
+        setDataMessage('Database masih memakai schema lama. Jalankan migration multi-paket agar admin bisa membuat Day 11.');
+        setLoadingData(false);
+        return;
+      }
       setQuestionBank(getLocalQuestions());
       setSettings(localExamConfig);
+      setExams(getLocalExams());
+      setSelectedExamId('local-day-10');
       setDataMessage('Belum bisa membaca Supabase. Jalankan supabase/schema.sql terlebih dahulu, sementara aplikasi memakai data lokal.');
       setLoadingData(false);
       return;
     }
 
-    if (settingsRows) {
-      setSettings({
-        title: settingsRows.title,
-        subject: settingsRows.subject,
-        durationMinutes: settingsRows.duration_minutes,
-      });
+    const normalizedExams = examRows.map(normalizeExam);
+    const chosenExam = normalizedExams.find((exam) => exam.id === targetExamId) || normalizedExams[0];
+    const { data: rows, error: questionsError } = await supabase
+      .from('questions')
+      .select('*')
+      .eq('exam_id', chosenExam.id)
+      .eq('active', true)
+      .order('sort_order', { ascending: true });
+
+    if (questionsError) {
+      setDataMessage(`Gagal memuat soal: ${questionsError.message}`);
+      setLoadingData(false);
+      return;
     }
+
+    setExams(normalizedExams);
+    setSelectedExamId(chosenExam.id);
+    setSettings(chosenExam);
     setQuestionBank((rows || []).map(normalizeQuestion));
     setDataMessage('');
     setLoadingData(false);
+  }
+
+  async function selectExam(examId) {
+    setSelectedExamId(examId);
+    await loadPublicData(examId);
+    setCurrentIndex(0);
+    setAnswers({});
+    setDoubtful({});
+    setResult(null);
   }
 
   async function restoreAdminSession() {
@@ -258,14 +336,24 @@ function App() {
     }
   }
 
-  async function loadAdminData() {
+  async function loadAdminData(targetExamId = selectedAdminExamId) {
     if (!isSupabaseConfigured) return;
+    const { data: examRows } = await supabase.from('exams').select('*').order('created_at', { ascending: true });
+    const normalizedExams = (examRows || []).map(normalizeExam);
+    const activeExamId = targetExamId || normalizedExams[0]?.id || '';
     const [{ data: questionRows }, { data: attemptRows }] = await Promise.all([
-      supabase.from('questions').select('*').order('sort_order', { ascending: true }),
+      activeExamId
+        ? supabase.from('questions').select('*').eq('exam_id', activeExamId).order('sort_order', { ascending: true })
+        : Promise.resolve({ data: [] }),
       supabase.from('attempts').select('*').order('finished_at', { ascending: false }),
     ]);
+    setAdminExams(normalizedExams);
+    setSelectedAdminExamId(activeExamId);
     setAdminQuestions((questionRows || []).map(normalizeQuestion));
     setAttempts(attemptRows || []);
+    if (!questionForm.exam_id && activeExamId) {
+      setQuestionForm((form) => ({ ...form, exam_id: activeExamId }));
+    }
   }
 
   function startInstructions(event) {
@@ -307,6 +395,7 @@ function App() {
     const durationSeconds = Math.max((settings.durationMinutes || 120) * 60 - secondsLeft, 0);
 
     const payload = {
+      exam_id: selectedExamId === 'legacy' || selectedExamId === 'local-day-10' ? null : selectedExamId,
       team_name: participant.name,
       team_number: participant.number,
       exam_title: settings.title,
@@ -387,29 +476,71 @@ function App() {
   async function saveSettings(event) {
     event.preventDefault();
     const payload = {
-      id: 1,
       title: settingsForm.title.trim(),
       subject: settingsForm.subject.trim(),
       duration_minutes: Number(settingsForm.duration_minutes),
+      active: Boolean(settingsForm.active),
       updated_at: new Date().toISOString(),
     };
-    const { error } = await supabase.from('exam_settings').update(payload).eq('id', 1);
-    setAdminMessage(error ? error.message : 'Setting ujian berhasil disimpan.');
+    const query = settingsForm.id
+      ? supabase.from('exams').update(payload).eq('id', settingsForm.id)
+      : supabase.from('exams').insert(payload).select('*').single();
+    const { data, error } = await query;
+    const savedExamId = settingsForm.id || data?.id;
+    setAdminMessage(error ? error.message : 'Paket soal berhasil disimpan.');
     if (!error) {
-      setSettings({
-        title: payload.title,
-        subject: payload.subject,
-        durationMinutes: payload.duration_minutes,
+      setSelectedAdminExamId(savedExamId);
+      setSettingsForm({ ...payload, id: savedExamId });
+      await loadAdminData(savedExamId);
+      await loadPublicData(selectedExamId);
+    }
+  }
+
+  function newExam() {
+    setSettingsForm({ ...emptyExamForm });
+    setQuestionForm({ ...emptyQuestionForm, exam_id: selectedAdminExamId, sort_order: adminQuestions.length + 1 });
+  }
+
+  async function selectAdminExam(examId) {
+    const exam = adminExams.find((item) => item.id === examId);
+    setSelectedAdminExamId(examId);
+    if (exam) {
+      setSettingsForm({
+        id: exam.id,
+        title: exam.title,
+        subject: exam.subject,
+        duration_minutes: exam.durationMinutes,
+        active: exam.active,
       });
+    }
+    setQuestionForm({ ...emptyQuestionForm, exam_id: examId, sort_order: 1 });
+    const { data: questionRows } = await supabase.from('questions').select('*').eq('exam_id', examId).order('sort_order', { ascending: true });
+    setAdminQuestions((questionRows || []).map(normalizeQuestion));
+  }
+
+  async function deleteExam(id) {
+    const confirmed = window.confirm('Hapus paket soal ini beserta soal-soalnya? Nilai yang sudah masuk tetap tersimpan.');
+    if (!confirmed) return;
+    const { error } = await supabase.from('exams').delete().eq('id', id);
+    setAdminMessage(error ? error.message : 'Paket soal berhasil dihapus.');
+    if (!error) {
+      setSelectedAdminExamId('');
+      setSettingsForm({ ...emptyExamForm });
+      setQuestionForm({ ...emptyQuestionForm });
+      await loadAdminData(payload.exam_id);
       await loadPublicData();
     }
   }
 
   async function saveQuestion(event) {
     event.preventDefault();
-    const payload = formToPayload(questionForm);
+    const payload = formToPayload({ ...questionForm, exam_id: questionForm.exam_id || selectedAdminExamId });
     if (!payload.text || !payload.options[payload.answer]) {
       setAdminMessage('Teks soal dan opsi jawaban benar wajib diisi.');
+      return;
+    }
+    if (!payload.exam_id) {
+      setAdminMessage('Pilih atau buat paket soal terlebih dahulu.');
       return;
     }
 
@@ -419,10 +550,29 @@ function App() {
     const { error } = await query;
     setAdminMessage(error ? error.message : 'Soal berhasil disimpan.');
     if (!error) {
-      setQuestionForm({ ...emptyQuestionForm, sort_order: adminQuestions.length + 1 });
+      setQuestionForm({ ...emptyQuestionForm, exam_id: payload.exam_id, sort_order: adminQuestions.length + 1 });
       await loadAdminData();
       await loadPublicData();
     }
+  }
+
+  async function uploadQuestionImage(file) {
+    if (!file) return;
+    if (!questionForm.exam_id && !selectedAdminExamId) {
+      setAdminMessage('Pilih paket soal sebelum upload gambar.');
+      return;
+    }
+    const safeName = file.name.toLowerCase().replace(/[^a-z0-9.]+/g, '-');
+    const path = `${questionForm.exam_id || selectedAdminExamId}/${Date.now()}-${safeName}`;
+    setAdminMessage('Mengupload gambar...');
+    const { error } = await supabase.storage.from('question-images').upload(path, file, { upsert: false });
+    if (error) {
+      setAdminMessage(error.message);
+      return;
+    }
+    const { data } = supabase.storage.from('question-images').getPublicUrl(path);
+    setQuestionForm((form) => ({ ...form, image: data.publicUrl }));
+    setAdminMessage('Gambar berhasil diupload.');
   }
 
   async function deleteQuestion(id) {
@@ -491,6 +641,20 @@ function App() {
 
           <form className="space-y-4" onSubmit={startInstructions}>
             <label className="block">
+              <span className="text-sm font-semibold text-slate-700">Pilih paket soal</span>
+              <select
+                value={selectedExamId}
+                onChange={(event) => selectExam(event.target.value)}
+                className="mt-2 w-full rounded-md border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+              >
+                {exams.map((exam) => (
+                  <option key={exam.id} value={exam.id}>
+                    {exam.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
               <span className="text-sm font-semibold text-slate-700">Nama regu</span>
               <input
                 required
@@ -541,12 +705,18 @@ function App() {
         questionForm={questionForm}
         saveQuestion={saveQuestion}
         saveSettings={saveSettings}
+        selectedAdminExamId={selectedAdminExamId}
         selectedAttempt={selectedAttempt}
         setAdminAuth={setAdminAuth}
         setQuestionForm={setQuestionForm}
         setSelectedAttempt={setSelectedAttempt}
         setSettingsForm={setSettingsForm}
         settingsForm={settingsForm}
+        adminExams={adminExams}
+        deleteExam={deleteExam}
+        newExam={newExam}
+        selectAdminExam={selectAdminExam}
+        uploadQuestionImage={uploadQuestionImage}
       />
     );
   }
@@ -819,26 +989,32 @@ function App() {
 
 function AdminPage({
   adminAuth,
+  adminExams,
   adminMessage,
   adminQuestions,
   adminSession,
   attempts,
   deleteAttempt,
+  deleteExam,
   deleteQuestion,
   isAdmin,
   onBack,
   onLogin,
   onLogout,
   onSignup,
+  newExam,
   questionForm,
   saveQuestion,
   saveSettings,
+  selectedAdminExamId,
   selectedAttempt,
+  selectAdminExam,
   setAdminAuth,
   setQuestionForm,
   setSelectedAttempt,
   setSettingsForm,
   settingsForm,
+  uploadQuestionImage,
 }) {
   if (!isSupabaseConfigured) {
     return (
@@ -928,7 +1104,7 @@ function AdminPage({
             <div>
               <p className="text-sm font-semibold text-blue-700">Admin</p>
               <h1 className="mt-2 text-2xl font-bold text-slate-950">Dashboard Bank Soal</h1>
-              <p className="mt-1 text-sm text-slate-600">{adminQuestions.length} soal · {attempts.length} nilai regu</p>
+              <p className="mt-1 text-sm text-slate-600">{adminExams.length} paket · {adminQuestions.length} soal paket terpilih · {attempts.length} nilai regu</p>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row">
               <button onClick={onBack} className="flex items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-3 font-semibold text-slate-800">
@@ -946,15 +1122,53 @@ function AdminPage({
 
           <div className="grid gap-0 lg:grid-cols-[420px_1fr]">
             <div className="border-b border-slate-200 p-5 lg:border-b-0 lg:border-r">
-              <form className="rounded-lg border border-slate-200 bg-slate-50 p-4" onSubmit={saveSettings}>
-                <h2 className="font-bold text-slate-950">Setting Ujian</h2>
+              <div className="rounded-lg border border-slate-200 bg-white p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="font-bold text-slate-950">Paket Soal</h2>
+                  <button type="button" onClick={newExam} className="flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800">
+                    <Plus size={16} aria-hidden="true" />
+                    Paket Baru
+                  </button>
+                </div>
+                <div className="mt-4 space-y-2">
+                  {adminExams.map((exam) => (
+                    <button
+                      key={exam.id}
+                      type="button"
+                      onClick={() => selectAdminExam(exam.id)}
+                      className={`w-full rounded-md border p-3 text-left text-sm ${selectedAdminExamId === exam.id ? 'border-blue-500 bg-blue-50 text-blue-900' : 'border-slate-200 bg-white text-slate-700'}`}
+                    >
+                      <span className="font-bold">{exam.title}</span>
+                      <span className="block text-xs text-slate-500">{exam.subject} · {exam.durationMinutes} menit · {exam.active ? 'Aktif' : 'Nonaktif'}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <form className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4" onSubmit={saveSettings}>
+                <div className="flex items-center justify-between gap-3">
+                  <h2 className="font-bold text-slate-950">{settingsForm.id ? 'Edit Paket' : 'Tambah Paket'}</h2>
+                  {settingsForm.id ? (
+                    <button type="button" onClick={() => deleteExam(settingsForm.id)} className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+                      Hapus
+                    </button>
+                  ) : null}
+                </div>
                 <div className="mt-4 space-y-3">
                   <AdminInput label="Judul" value={settingsForm.title} onChange={(value) => setSettingsForm((form) => ({ ...form, title: value }))} />
                   <AdminInput label="Subjek" value={settingsForm.subject} onChange={(value) => setSettingsForm((form) => ({ ...form, subject: value }))} />
                   <AdminInput label="Durasi menit" type="number" value={settingsForm.duration_minutes} onChange={(value) => setSettingsForm((form) => ({ ...form, duration_minutes: value }))} />
+                  <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={settingsForm.active}
+                      onChange={(event) => setSettingsForm((form) => ({ ...form, active: event.target.checked }))}
+                    />
+                    Paket aktif untuk regu
+                  </label>
                   <button className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-700 px-4 py-3 font-semibold text-white">
                     <Save size={18} aria-hidden="true" />
-                    Simpan Setting
+                    Simpan Paket
                   </button>
                 </div>
               </form>
@@ -964,7 +1178,7 @@ function AdminPage({
                   <h2 className="font-bold text-slate-950">{questionForm.id ? 'Edit Soal' : 'Tambah Soal'}</h2>
                   <button
                     type="button"
-                    onClick={() => setQuestionForm({ ...emptyQuestionForm, sort_order: adminQuestions.length + 1 })}
+                    onClick={() => setQuestionForm({ ...emptyQuestionForm, exam_id: selectedAdminExamId, sort_order: adminQuestions.length + 1 })}
                     className="flex items-center gap-2 rounded-md border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800"
                   >
                     <Plus size={16} aria-hidden="true" />
@@ -972,6 +1186,21 @@ function AdminPage({
                   </button>
                 </div>
                 <div className="mt-4 space-y-3">
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-700">Paket soal</span>
+                    <select
+                      value={questionForm.exam_id || selectedAdminExamId}
+                      onChange={(event) => setQuestionForm((form) => ({ ...form, exam_id: event.target.value }))}
+                      className="mt-2 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+                    >
+                      <option value="">Pilih paket</option>
+                      {adminExams.map((exam) => (
+                        <option key={exam.id} value={exam.id}>
+                          {exam.title}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <AdminInput label="Nomor urut" type="number" value={questionForm.sort_order} onChange={(value) => setQuestionForm((form) => ({ ...form, sort_order: value }))} />
                   <label className="block">
                     <span className="text-sm font-semibold text-slate-700">Teks soal</span>
@@ -982,7 +1211,19 @@ function AdminPage({
                       className="mt-2 min-h-24 w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
                     />
                   </label>
-                  <AdminInput label="URL gambar" value={questionForm.image} onChange={(value) => setQuestionForm((form) => ({ ...form, image: value }))} placeholder="/images/questions/sandi-01.jpeg" />
+                  <AdminInput label="URL gambar" value={questionForm.image} onChange={(value) => setQuestionForm((form) => ({ ...form, image: value }))} placeholder="Upload gambar atau isi URL" />
+                  <label className="block">
+                    <span className="text-sm font-semibold text-slate-700">Upload gambar dari file explorer</span>
+                    <div className="mt-2 flex items-center gap-2 rounded-md border border-dashed border-slate-300 bg-slate-50 p-3">
+                      <Upload size={18} className="text-slate-500" aria-hidden="true" />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(event) => uploadQuestionImage(event.target.files?.[0])}
+                        className="w-full text-sm text-slate-700"
+                      />
+                    </div>
+                  </label>
                   {['A', 'B', 'C', 'D', 'E'].map((key) => (
                     <AdminInput
                       key={key}

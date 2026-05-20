@@ -58,9 +58,10 @@ Aplikasi mendukung mode Supabase agar admin bisa CRUD soal dan melihat nilai sem
 1. Buka Supabase project.
 2. Masuk ke SQL Editor.
 3. Jalankan seluruh isi file `supabase/schema.sql`.
-4. Jalankan aplikasi, buka mode Admin, lalu buat akun admin.
-5. Buka Supabase Authentication > Users, copy UID akun admin.
-6. Jalankan query penanda admin yang ada di bagian bawah `supabase/schema.sql`.
+4. Jalankan seluruh isi file `supabase/migrate_multi_exam_storage.sql` untuk mengaktifkan banyak paket soal dan upload gambar.
+5. Jalankan aplikasi, buka mode Admin, lalu buat akun admin.
+6. Buka Supabase Authentication > Users, copy UID akun admin.
+7. Jalankan query penanda admin yang ada di bagian bawah `supabase/schema.sql`.
 
 Environment variable yang perlu dipasang di Vercel:
 
@@ -76,3 +77,9 @@ Setelah environment variable dipasang, redeploy project di Vercel.
 Jika Supabase aktif, hasil regu tersimpan ke database dan bisa dilihat admin. Jika Supabase belum aktif atau schema belum dijalankan, aplikasi memakai data lokal sebagai fallback.
 
 Fallback lokal memakai `localStorage`, artinya data hanya tersimpan pada browser/perangkat yang digunakan.
+
+## Paket soal dan upload gambar
+
+Admin dapat membuat banyak paket soal, misalnya `Soal Simulasi Day 10` dan `Soal Simulasi Day 11`. Setiap soal tersimpan pada paketnya masing-masing, sehingga membuat paket baru tidak menghapus paket lama.
+
+Upload gambar soal menggunakan Supabase Storage bucket `question-images`, yang dibuat oleh file `supabase/migrate_multi_exam_storage.sql`.
