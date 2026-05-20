@@ -721,7 +721,20 @@ function App() {
 }
 
 function Shell({ centered = false, children }) {
-  return <div className={centered ? 'flex min-h-screen items-center justify-center bg-slate-100 p-4' : 'min-h-screen bg-slate-100'}>{children}</div>;
+  return (
+    <div className={centered ? 'flex min-h-screen items-center justify-center bg-slate-100 p-4' : 'min-h-screen bg-slate-100'}>
+      {children}
+      <Watermark />
+    </div>
+  );
+}
+
+function Watermark() {
+  return (
+    <div className="pointer-events-none fixed bottom-3 right-3 z-[60] rounded-md border border-slate-200 bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-500 shadow-sm backdrop-blur">
+      Web by MadeSurya24
+    </div>
+  );
 }
 
 function Info({ label, value }) {
