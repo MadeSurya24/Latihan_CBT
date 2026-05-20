@@ -731,9 +731,15 @@ function Shell({ centered = false, children }) {
 
 function Watermark() {
   return (
-    <div className="pointer-events-none fixed bottom-3 right-3 z-[60] rounded-md border border-slate-200 bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-500 shadow-sm backdrop-blur">
+    <a
+      href="https://www.instagram.com/imaddd24_/"
+      target="_blank"
+      rel="noreferrer"
+      className="fixed bottom-3 right-3 z-[60] rounded-md border border-slate-200 bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-500 shadow-sm backdrop-blur transition hover:border-blue-200 hover:text-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100"
+      aria-label="Buka Instagram MadeSurya24"
+    >
       Web by MadeSurya24
-    </div>
+    </a>
   );
 }
 
