@@ -521,13 +521,27 @@ function App() {
   async function deleteExam(id) {
     const confirmed = window.confirm('Hapus paket soal ini beserta soal-soalnya? Nilai yang sudah masuk tetap tersimpan.');
     if (!confirmed) return;
+    setAdminMessage('Menghapus paket soal...');
+
+    const { error: detachAttemptsError } = await supabase.from('attempts').update({ exam_id: null }).eq('exam_id', id);
+    if (detachAttemptsError) {
+      setAdminMessage(`Gagal melepas nilai dari paket: ${detachAttemptsError.message}`);
+      return;
+    }
+
+    const { error: deleteQuestionsError } = await supabase.from('questions').delete().eq('exam_id', id);
+    if (deleteQuestionsError) {
+      setAdminMessage(`Gagal menghapus soal dalam paket: ${deleteQuestionsError.message}`);
+      return;
+    }
+
     const { error } = await supabase.from('exams').delete().eq('id', id);
-    setAdminMessage(error ? error.message : 'Paket soal berhasil dihapus.');
+    setAdminMessage(error ? `Gagal menghapus paket: ${error.message}` : 'Paket soal berhasil dihapus.');
     if (!error) {
       setSelectedAdminExamId('');
       setSettingsForm({ ...emptyExamForm });
       setQuestionForm({ ...emptyQuestionForm });
-      await loadAdminData(payload.exam_id);
+      await loadAdminData();
       await loadPublicData();
     }
   }
