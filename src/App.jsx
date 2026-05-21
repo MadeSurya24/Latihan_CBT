@@ -132,6 +132,11 @@ function getLocalDraft(userId, examId) {
   return getLocalDrafts()[getDraftKey(userId, examId)] || null;
 }
 
+function getNewestLocalDraftForUser(userId) {
+  const drafts = Object.values(getLocalDrafts()).filter((draft) => draft?.user_id === userId);
+  return drafts.sort((a, b) => new Date(b.updated_at || b.created_at || 0) - new Date(a.updated_at || a.created_at || 0))[0] || null;
+}
+
 function saveLocalDraft(draft) {
   if (!draft?.user_id || !draft?.exam_id) return;
   const drafts = getLocalDrafts();
@@ -259,8 +264,7 @@ function App() {
   const doubtfulCount = Object.values(doubtful).filter(Boolean).length;
 
   useEffect(() => {
-    loadPublicData();
-    restoreAuthSession();
+    initializeApp();
   }, []);
 
   useEffect(() => {
@@ -319,6 +323,35 @@ function App() {
 
   const summary = useMemo(() => calculateResult(questionBank, answers), [answers, questionBank]);
 
+  async function initializeApp() {
+    if (!isSupabaseConfigured) {
+      await loadPublicData();
+      return;
+    }
+
+    const { data } = await supabase.auth.getSession();
+    if (!data.session) {
+      await loadPublicData();
+      return;
+    }
+
+    setUserSession(data.session);
+    await loadUserProfile(data.session.user);
+    await loadUserAttempts(data.session.user.id);
+    setAdminSession(data.session);
+    await checkAdminAccess(data.session.user);
+
+    const latestDraft = await loadLatestDraftForUser(data.session.user.id);
+    const loadedExamId = await loadPublicData(latestDraft?.exam_id || selectedExamId);
+    if (latestDraft && latestDraft.exam_id === loadedExamId) {
+      setActiveDraft(latestDraft);
+      setUserMessage(`Draft terakhir ditemukan pada ${formatDateTime(latestDraft.updated_at)}. Tekan "Lanjutkan Pengerjaan" untuk kembali.`);
+    } else {
+      await loadDraftForExam(loadedExamId, data.session.user.id);
+    }
+    setPage(screen.DASHBOARD);
+  }
+
   async function loadPublicData(targetExamId = selectedExamId) {
     setLoadingData(true);
     setDataMessage('');
@@ -330,7 +363,7 @@ function App() {
       setSettings(localExamConfig);
       setDataMessage('Supabase belum dikonfigurasi. Aplikasi memakai data lokal.');
       setLoadingData(false);
-      return;
+      return 'local-day-10';
     }
 
     const { data: examRows, error: examsError } = await supabase
@@ -356,7 +389,7 @@ function App() {
         setQuestionBank((rows || []).map(normalizeQuestion));
         setDataMessage('Database masih memakai schema lama. Jalankan migration multi-paket agar admin bisa membuat Day 11.');
         setLoadingData(false);
-        return;
+        return 'legacy';
       }
       setQuestionBank(getLocalQuestions());
       setSettings(localExamConfig);
@@ -364,7 +397,7 @@ function App() {
       setSelectedExamId('local-day-10');
       setDataMessage('Belum bisa membaca Supabase. Jalankan supabase/schema.sql terlebih dahulu, sementara aplikasi memakai data lokal.');
       setLoadingData(false);
-      return;
+      return 'local-day-10';
     }
 
     const normalizedExams = examRows.map(normalizeExam);
@@ -379,7 +412,7 @@ function App() {
     if (questionsError) {
       setDataMessage(`Gagal memuat soal: ${questionsError.message}`);
       setLoadingData(false);
-      return;
+      return chosenExam.id;
     }
 
     setExams(normalizedExams);
@@ -388,6 +421,7 @@ function App() {
     setQuestionBank((rows || []).map(normalizeQuestion));
     setDataMessage('');
     setLoadingData(false);
+    return chosenExam.id;
   }
 
   async function selectExam(examId) {
@@ -402,6 +436,27 @@ function App() {
     }
   }
 
+  async function loadLatestDraftForUser(userId) {
+    const localDraft = getNewestLocalDraftForUser(userId);
+    if (!isSupabaseConfigured || !userId) return localDraft;
+
+    const { data, error } = await supabase
+      .from('attempt_drafts')
+      .select('*')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      setDraftStatus(localDraft ? 'Draft terakhir dipulihkan dari perangkat ini.' : `Gagal membaca draft terakhir: ${error.message}`);
+      return localDraft;
+    }
+
+    const newestDraft = getNewestDraft(localDraft, data?.[0] || null);
+    if (newestDraft) saveLocalDraft(newestDraft);
+    return newestDraft;
+  }
+
   async function restoreAuthSession() {
     if (!isSupabaseConfigured) return;
     const { data } = await supabase.auth.getSession();
@@ -411,6 +466,14 @@ function App() {
       await loadUserAttempts(data.session.user.id);
       setAdminSession(data.session);
       await checkAdminAccess(data.session.user);
+      const latestDraft = await loadLatestDraftForUser(data.session.user.id);
+      if (latestDraft?.exam_id) {
+        await loadPublicData(latestDraft.exam_id);
+        setActiveDraft(latestDraft);
+        setUserMessage(`Draft terakhir ditemukan pada ${formatDateTime(latestDraft.updated_at)}. Tekan "Lanjutkan Pengerjaan" untuk kembali.`);
+        setPage(screen.DASHBOARD);
+        return;
+      }
       setPage(screen.DASHBOARD);
       await loadDraftForExam(selectedExamId, data.session.user.id);
     }
@@ -503,8 +566,15 @@ function App() {
     await loadUserProfile(data.user);
     await loadUserAttempts(data.user.id);
     await checkAdminAccess(data.user);
-    await loadDraftForExam(selectedExamId, data.user.id);
-    setUserMessage('');
+    const latestDraft = await loadLatestDraftForUser(data.user.id);
+    if (latestDraft?.exam_id) {
+      await loadPublicData(latestDraft.exam_id);
+      setActiveDraft(latestDraft);
+      setUserMessage(`Draft terakhir ditemukan pada ${formatDateTime(latestDraft.updated_at)}. Tekan "Lanjutkan Pengerjaan" untuk kembali.`);
+    } else {
+      await loadDraftForExam(selectedExamId, data.user.id);
+      setUserMessage('');
+    }
     setPage(screen.DASHBOARD);
   }
 
@@ -638,7 +708,7 @@ function App() {
     return data;
   }
 
-  async function beginAttempt(resume = false) {
+  async function beginAttempt(resume = false, openExam = false) {
     if (questionBank.length === 0) {
       window.alert('Belum ada soal aktif. Tambahkan soal dari halaman admin terlebih dahulu.');
       return;
@@ -660,6 +730,16 @@ function App() {
       setDoubtful(draft.doubtful || {});
       setCurrentIndex(Math.min(draft.current_index || 0, Math.max(questionBank.length - 1, 0)));
       setExamStartedAt(draft.started_at || new Date().toISOString());
+      if (openExam) {
+        const totalSeconds = (settings.durationMinutes || 120) * 60;
+        const elapsed = Math.max(Math.floor((Date.now() - new Date(draft.started_at || new Date()).getTime()) / 1000), 0);
+        setSecondsLeft(Math.max(totalSeconds - elapsed, 0));
+        setResult(null);
+        setSaveStatus('');
+        setDraftStatus('Draft dipulihkan. Lanjutkan dari soal terakhir.');
+        setPage(screen.EXAM);
+        return;
+      }
     } else {
       if (userSession) {
         removeLocalDraft(userSession.user.id, selectedExamId);
@@ -1159,9 +1239,9 @@ function App() {
                 {userMessage ? <p className="mt-4 rounded-md bg-white p-3 text-sm text-slate-600">{userMessage}</p> : null}
                 <div className="mt-5 space-y-3">
                   {activeDraft ? (
-                    <button onClick={() => beginAttempt(true)} className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-700 px-4 py-3 font-semibold text-white">
+                    <button onClick={() => beginAttempt(true, true)} className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-700 px-4 py-3 font-semibold text-white">
                       <RotateCcw size={18} aria-hidden="true" />
-                      Lanjutkan Pengerjaan
+                      Lanjutkan dari Soal {(activeDraft.current_index || 0) + 1}
                     </button>
                   ) : null}
                   <button onClick={() => beginAttempt(false)} className="flex w-full items-center justify-center gap-2 rounded-md border border-blue-200 bg-white px-4 py-3 font-semibold text-blue-800">
