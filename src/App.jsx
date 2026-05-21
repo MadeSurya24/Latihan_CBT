@@ -10,6 +10,7 @@ import {
   Eye,
   Flag,
   History,
+  Home,
   LogIn,
   LogOut,
   Menu,
@@ -20,6 +21,8 @@ import {
   Send,
   Trash2,
   Upload,
+  User,
+  UserPlus,
   X,
 } from 'lucide-react';
 import { examConfig as localExamConfig, questions as localQuestions } from './questions.js';
@@ -29,6 +32,9 @@ const HISTORY_STORAGE_KEY = 'cbt-bank-soal-local-attempts';
 
 const screen = {
   LOGIN: 'login',
+  DASHBOARD: 'dashboard',
+  USER_HISTORY: 'user-history',
+  PROFILE: 'profile',
   INSTRUCTIONS: 'instructions',
   EXAM: 'exam',
   RESULT: 'result',
@@ -183,6 +189,14 @@ function App() {
   const [showMobilePanel, setShowMobilePanel] = useState(false);
   const [result, setResult] = useState(null);
   const [saveStatus, setSaveStatus] = useState('');
+  const [userSession, setUserSession] = useState(null);
+  const [userProfile, setUserProfile] = useState({ team_name: '', team_number: '' });
+  const [userAuth, setUserAuth] = useState({ email: '', password: '', team_name: '', team_number: '' });
+  const [userMessage, setUserMessage] = useState('');
+  const [userAttempts, setUserAttempts] = useState([]);
+  const [selectedUserAttempt, setSelectedUserAttempt] = useState(null);
+  const [activeDraft, setActiveDraft] = useState(null);
+  const [draftStatus, setDraftStatus] = useState('');
 
   const [adminSession, setAdminSession] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -208,7 +222,7 @@ function App() {
 
   useEffect(() => {
     loadPublicData();
-    restoreAdminSession();
+    restoreAuthSession();
   }, []);
 
   useEffect(() => {
@@ -233,6 +247,16 @@ function App() {
     }, 1000);
     return () => window.clearInterval(interval);
   }, [page, secondsLeft]);
+
+  useEffect(() => {
+    if (page !== screen.EXAM || !userSession || !isSupabaseConfigured || selectedExamId === 'legacy' || selectedExamId === 'local-day-10') {
+      return undefined;
+    }
+    const timeout = window.setTimeout(() => {
+      saveDraft();
+    }, 700);
+    return () => window.clearTimeout(timeout);
+  }, [page, userSession, selectedExamId, currentIndex, answers, doubtful, examStartedAt]);
 
   const summary = useMemo(() => calculateResult(questionBank, answers), [answers, questionBank]);
 
@@ -314,15 +338,246 @@ function App() {
     setAnswers({});
     setDoubtful({});
     setResult(null);
+    if (userSession) {
+      await loadDraftForExam(examId, userSession.user.id);
+    }
   }
 
-  async function restoreAdminSession() {
+  async function restoreAuthSession() {
     if (!isSupabaseConfigured) return;
     const { data } = await supabase.auth.getSession();
     if (data.session) {
+      setUserSession(data.session);
+      await loadUserProfile(data.session.user);
+      await loadUserAttempts(data.session.user.id);
       setAdminSession(data.session);
       await checkAdminAccess(data.session.user);
+      setPage(screen.DASHBOARD);
+      await loadDraftForExam(selectedExamId, data.session.user.id);
     }
+  }
+
+  async function loadUserProfile(user) {
+    if (!isSupabaseConfigured || !user) return null;
+    const { data, error } = await supabase.from('user_profiles').select('*').eq('user_id', user.id).maybeSingle();
+    if (error) {
+      setUserMessage(`Gagal membaca profile: ${error.message}`);
+      return null;
+    }
+    if (data) {
+      setUserProfile(data);
+      setParticipant({ name: data.team_name || '', number: data.team_number || '' });
+      setUserAuth((value) => ({ ...value, team_name: data.team_name || '', team_number: data.team_number || '' }));
+      return data;
+    }
+    const fallback = {
+      user_id: user.id,
+      team_name: user.user_metadata?.team_name || '',
+      team_number: user.user_metadata?.team_number || '',
+    };
+    const { data: inserted, error: insertError } = await supabase.from('user_profiles').insert(fallback).select('*').single();
+    if (insertError) {
+      setUserMessage(`Profile belum bisa dibuat: ${insertError.message}`);
+      return null;
+    }
+    setUserProfile(inserted);
+    setParticipant({ name: inserted.team_name || '', number: inserted.team_number || '' });
+    return inserted;
+  }
+
+  async function loadUserAttempts(userId = userSession?.user?.id) {
+    if (!isSupabaseConfigured || !userId) return;
+    const { data, error } = await supabase
+      .from('attempts')
+      .select('*')
+      .eq('user_id', userId)
+      .order('finished_at', { ascending: false });
+    if (error) {
+      setUserMessage(`Gagal membaca histori: ${error.message}`);
+      return;
+    }
+    setUserAttempts(data || []);
+  }
+
+  async function loadDraftForExam(examId = selectedExamId, userId = userSession?.user?.id) {
+    setActiveDraft(null);
+    if (!isSupabaseConfigured || !userId || examId === 'legacy' || examId === 'local-day-10') return null;
+    const { data, error } = await supabase
+      .from('attempt_drafts')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('exam_id', examId)
+      .maybeSingle();
+    if (error) {
+      setUserMessage(`Gagal membaca draft: ${error.message}`);
+      return null;
+    }
+    setActiveDraft(data || null);
+    return data || null;
+  }
+
+  async function userSignIn(event) {
+    event.preventDefault();
+    if (!isSupabaseConfigured) {
+      setUserMessage('Supabase belum aktif, login akun regu belum bisa digunakan.');
+      return;
+    }
+    setUserMessage('Memproses login...');
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: userAuth.email,
+      password: userAuth.password,
+    });
+    if (error) {
+      setUserMessage(error.message);
+      return;
+    }
+    setUserSession(data.session);
+    await loadUserProfile(data.user);
+    await loadUserAttempts(data.user.id);
+    await checkAdminAccess(data.user);
+    await loadDraftForExam(selectedExamId, data.user.id);
+    setUserMessage('');
+    setPage(screen.DASHBOARD);
+  }
+
+  async function userSignUp() {
+    if (!isSupabaseConfigured) {
+      setUserMessage('Supabase belum aktif, akun regu belum bisa dibuat.');
+      return;
+    }
+    if (!userAuth.email || !userAuth.password || !userAuth.team_name || !userAuth.team_number) {
+      setUserMessage('Email, password, nama regu, dan nomor regu wajib diisi.');
+      return;
+    }
+    setUserMessage('Membuat akun regu...');
+    const { data, error } = await supabase.auth.signUp({
+      email: userAuth.email,
+      password: userAuth.password,
+      options: {
+        data: {
+          team_name: userAuth.team_name,
+          team_number: userAuth.team_number,
+        },
+      },
+    });
+    if (error) {
+      setUserMessage(error.message);
+      return;
+    }
+    if (!data.session) {
+      setUserMessage('Akun dibuat. Jika diminta konfirmasi email, buka email lalu login kembali.');
+      return;
+    }
+    setUserSession(data.session);
+    await supabase.from('user_profiles').upsert({
+      user_id: data.user.id,
+      team_name: userAuth.team_name,
+      team_number: userAuth.team_number,
+      updated_at: new Date().toISOString(),
+    });
+    await loadUserProfile(data.user);
+    await loadUserAttempts(data.user.id);
+    setUserMessage('');
+    setPage(screen.DASHBOARD);
+  }
+
+  async function userLogout() {
+    await supabase.auth.signOut();
+    setUserSession(null);
+    setAdminSession(null);
+    setIsAdmin(false);
+    setUserProfile({ team_name: '', team_number: '' });
+    setUserAttempts([]);
+    setSelectedUserAttempt(null);
+    setActiveDraft(null);
+    setPage(screen.LOGIN);
+    setCurrentIndex(0);
+    setAnswers({});
+    setDoubtful({});
+    setResult(null);
+    setSaveStatus('');
+    setDraftStatus('');
+  }
+
+  async function saveProfile(event) {
+    event.preventDefault();
+    if (!userSession) return;
+    setUserMessage('Menyimpan profile...');
+    const payload = {
+      user_id: userSession.user.id,
+      team_name: userAuth.team_name.trim(),
+      team_number: userAuth.team_number.trim(),
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error } = await supabase.from('user_profiles').upsert(payload).select('*').single();
+    if (error) {
+      setUserMessage(error.message);
+      return;
+    }
+    setUserProfile(data);
+    setParticipant({ name: data.team_name, number: data.team_number });
+    setUserMessage('Profile berhasil disimpan.');
+  }
+
+  async function saveDraft() {
+    if (!userSession || !currentQuestion) return;
+    const payload = {
+      user_id: userSession.user.id,
+      exam_id: selectedExamId,
+      team_name: participant.name || userProfile.team_name || '',
+      team_number: participant.number || userProfile.team_number || '',
+      started_at: examStartedAt || new Date().toISOString(),
+      current_index: currentIndex,
+      answers,
+      doubtful,
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error } = await supabase
+      .from('attempt_drafts')
+      .upsert(payload, { onConflict: 'user_id,exam_id' })
+      .select('*')
+      .single();
+    if (error) {
+      setDraftStatus(`Autosave gagal: ${error.message}`);
+      return;
+    }
+    setActiveDraft(data);
+    setDraftStatus(`Tersimpan otomatis ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`);
+  }
+
+  async function beginAttempt(resume = false) {
+    if (questionBank.length === 0) {
+      window.alert('Belum ada soal aktif. Tambahkan soal dari halaman admin terlebih dahulu.');
+      return;
+    }
+    const profileName = userProfile.team_name || userAuth.team_name;
+    const profileNumber = userProfile.team_number || userAuth.team_number;
+    if (!profileName || !profileNumber) {
+      setUserMessage('Lengkapi nama regu dan nomor regu di halaman profile dulu.');
+      setPage(screen.PROFILE);
+      return;
+    }
+    setParticipant({ name: profileName, number: profileNumber });
+    let draft = activeDraft;
+    if (resume) {
+      draft = await loadDraftForExam(selectedExamId);
+    }
+    if (resume && draft) {
+      setAnswers(draft.answers || {});
+      setDoubtful(draft.doubtful || {});
+      setCurrentIndex(Math.min(draft.current_index || 0, Math.max(questionBank.length - 1, 0)));
+      setExamStartedAt(draft.started_at || new Date().toISOString());
+    } else {
+      setAnswers({});
+      setDoubtful({});
+      setCurrentIndex(0);
+      setExamStartedAt(new Date().toISOString());
+      setActiveDraft(null);
+    }
+    setResult(null);
+    setSaveStatus('');
+    setDraftStatus('');
+    setPage(screen.INSTRUCTIONS);
   }
 
   async function checkAdminAccess(user) {
@@ -367,8 +622,14 @@ function App() {
 
   function startExam() {
     setPage(screen.EXAM);
-    setSecondsLeft((settings.durationMinutes || 120) * 60);
-    setExamStartedAt(new Date().toISOString());
+    const totalSeconds = (settings.durationMinutes || 120) * 60;
+    if (examStartedAt) {
+      const elapsed = Math.max(Math.floor((Date.now() - new Date(examStartedAt).getTime()) / 1000), 0);
+      setSecondsLeft(Math.max(totalSeconds - elapsed, 0));
+    } else {
+      setSecondsLeft(totalSeconds);
+      setExamStartedAt(new Date().toISOString());
+    }
   }
 
   function chooseAnswer(optionKey) {
@@ -396,6 +657,7 @@ function App() {
 
     const payload = {
       exam_id: selectedExamId === 'legacy' || selectedExamId === 'local-day-10' ? null : selectedExamId,
+      user_id: userSession?.user?.id || null,
       team_name: participant.name,
       team_number: participant.number,
       exam_title: settings.title,
@@ -416,6 +678,11 @@ function App() {
     if (isSupabaseConfigured) {
       const { error } = await supabase.from('attempts').insert(payload);
       setSaveStatus(error ? `Hasil tampil, tetapi gagal tersimpan ke Supabase: ${error.message}` : 'Hasil berhasil tersimpan ke database.');
+      if (!error && userSession && selectedExamId !== 'legacy' && selectedExamId !== 'local-day-10') {
+        await supabase.from('attempt_drafts').delete().eq('user_id', userSession.user.id).eq('exam_id', selectedExamId);
+        setActiveDraft(null);
+        await loadUserAttempts(userSession.user.id);
+      }
     } else {
       const localAttempt = { ...payload, id: `${Date.now()}`, result: finalResult };
       const nextHistory = [localAttempt, ...getLocalAttempts()].slice(0, 200);
@@ -428,8 +695,8 @@ function App() {
     setPage(screen.RESULT);
   }
 
-  function restart() {
-    setPage(screen.LOGIN);
+  function restart(goLogin = true) {
+    setPage(goLogin && !userSession ? screen.LOGIN : screen.DASHBOARD);
     setParticipant({ name: '', number: '' });
     setCurrentIndex(0);
     setAnswers({});
@@ -440,6 +707,7 @@ function App() {
     setShowMobilePanel(false);
     setResult(null);
     setSaveStatus('');
+    setDraftStatus('');
   }
 
   async function adminSignIn(event) {
@@ -658,44 +926,234 @@ function App() {
             </button>
           </div>
 
-          <form className="space-y-4" onSubmit={startInstructions}>
+          <form className="space-y-4" onSubmit={userSignIn}>
             <label className="block">
-              <span className="text-sm font-semibold text-slate-700">Pilih paket soal</span>
-              <select
-                value={selectedExamId}
-                onChange={(event) => selectExam(event.target.value)}
+              <span className="text-sm font-semibold text-slate-700">Email regu</span>
+              <input
+                required
+                type="email"
+                value={userAuth.email}
+                onChange={(event) => setUserAuth((value) => ({ ...value, email: event.target.value }))}
                 className="mt-2 w-full rounded-md border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
-              >
-                {exams.map((exam) => (
-                  <option key={exam.id} value={exam.id}>
-                    {exam.title}
-                  </option>
-                ))}
-              </select>
+                placeholder="regu@example.com"
+              />
             </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-slate-700">Password</span>
+              <input
+                required
+                type="password"
+                value={userAuth.password}
+                onChange={(event) => setUserAuth((value) => ({ ...value, password: event.target.value }))}
+                className="mt-2 w-full rounded-md border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+                placeholder="Minimal 6 karakter"
+              />
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="text-sm font-semibold text-slate-700">Nama regu</span>
+                <input
+                  value={userAuth.team_name}
+                  onChange={(event) => setUserAuth((value) => ({ ...value, team_name: event.target.value }))}
+                  className="mt-2 w-full rounded-md border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+                  placeholder="Regu Garuda"
+                />
+              </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-slate-700">Nomor regu</span>
+                <input
+                  value={userAuth.team_number}
+                  onChange={(event) => setUserAuth((value) => ({ ...value, team_number: event.target.value }))}
+                  className="mt-2 w-full rounded-md border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+                  placeholder="01"
+                />
+              </label>
+            </div>
+            {userMessage ? <p className="rounded-md bg-slate-50 p-3 text-sm leading-6 text-slate-600">{userMessage}</p> : null}
+            <button className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-700 px-4 py-3 font-semibold text-white transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-200">
+              <LogIn size={19} aria-hidden="true" />
+              Masuk Regu
+            </button>
+            <button
+              type="button"
+              onClick={userSignUp}
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-800 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-blue-100"
+            >
+              <UserPlus size={18} aria-hidden="true" />
+              Buat Akun Regu
+            </button>
+          </form>
+        </section>
+      </Shell>
+    );
+  }
+
+  if (page === screen.DASHBOARD) {
+    return (
+      <Shell>
+        <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-6 sm:py-8">
+          <section className="rounded-lg border border-slate-200 bg-white shadow-soft">
+            <div className="flex flex-col gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+              <div>
+                <p className="text-sm font-semibold text-blue-700">Dashboard Regu</p>
+                <h1 className="mt-2 text-2xl font-bold text-slate-950">Halo, {userProfile.team_name || 'Regu'}</h1>
+                <p className="mt-1 text-sm text-slate-600">Nomor regu: {userProfile.team_number || '-'}</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:flex">
+                <button onClick={() => setPage(screen.USER_HISTORY)} className="flex items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-3 font-semibold text-slate-800">
+                  <History size={18} aria-hidden="true" />
+                  Histori
+                </button>
+                <button onClick={() => setPage(screen.PROFILE)} className="flex items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-3 font-semibold text-slate-800">
+                  <User size={18} aria-hidden="true" />
+                  Profile
+                </button>
+                <button onClick={userLogout} className="col-span-2 flex items-center justify-center gap-2 rounded-md bg-slate-900 px-4 py-3 font-semibold text-white sm:col-span-1">
+                  <LogOut size={18} aria-hidden="true" />
+                  Logout
+                </button>
+              </div>
+            </div>
+            <div className="grid gap-6 p-5 sm:p-6 lg:grid-cols-[1fr_320px]">
+              <div>
+                <label className="block">
+                  <span className="text-sm font-semibold text-slate-700">Pilih paket soal</span>
+                  <select
+                    value={selectedExamId}
+                    onChange={(event) => selectExam(event.target.value)}
+                    className="mt-2 w-full rounded-md border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
+                  >
+                    {exams.map((exam) => (
+                      <option key={exam.id} value={exam.id}>
+                        {exam.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-5">
+                  <p className="text-sm font-semibold text-blue-700">{settings.subject}</p>
+                  <h2 className="mt-2 text-xl font-bold text-slate-950">{settings.title}</h2>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <Info label="Jumlah soal" value={questionBank.length} />
+                    <Info label="Durasi" value={`${settings.durationMinutes} menit`} />
+                    <Info label="Draft" value={activeDraft ? 'Ada' : 'Belum ada'} />
+                  </div>
+                  {activeDraft ? (
+                    <p className="mt-4 rounded-md bg-blue-50 p-3 text-sm leading-6 text-blue-900">
+                      Ada pengerjaan yang belum disubmit. Terakhir tersimpan {formatDateTime(activeDraft.updated_at)}.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+              <aside className="rounded-lg border border-blue-100 bg-blue-50 p-5">
+                <h2 className="font-bold text-blue-950">Mulai Pengerjaan</h2>
+                <p className="mt-2 text-sm leading-6 text-blue-900">Jawaban akan tersimpan otomatis saat ujian berjalan, jadi refresh atau tombol kembali tidak menghapus progres.</p>
+                {userMessage ? <p className="mt-4 rounded-md bg-white p-3 text-sm text-slate-600">{userMessage}</p> : null}
+                <div className="mt-5 space-y-3">
+                  {activeDraft ? (
+                    <button onClick={() => beginAttempt(true)} className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-700 px-4 py-3 font-semibold text-white">
+                      <RotateCcw size={18} aria-hidden="true" />
+                      Lanjutkan Pengerjaan
+                    </button>
+                  ) : null}
+                  <button onClick={() => beginAttempt(false)} className="flex w-full items-center justify-center gap-2 rounded-md border border-blue-200 bg-white px-4 py-3 font-semibold text-blue-800">
+                    <ArrowRight size={18} aria-hidden="true" />
+                    Mulai Baru
+                  </button>
+                </div>
+              </aside>
+            </div>
+          </section>
+        </main>
+      </Shell>
+    );
+  }
+
+  if (page === screen.USER_HISTORY) {
+    return (
+      <Shell>
+        <main className="mx-auto min-h-screen w-full max-w-6xl px-4 py-6 sm:py-8">
+          <section className="rounded-lg border border-slate-200 bg-white shadow-soft">
+            <div className="flex flex-col gap-4 border-b border-slate-200 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+              <div>
+                <p className="text-sm font-semibold text-blue-700">Histori Pengerjaan</p>
+                <h1 className="mt-2 text-2xl font-bold text-slate-950">{userProfile.team_name || 'Regu'}</h1>
+              </div>
+              <button onClick={() => setPage(screen.DASHBOARD)} className="flex items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-3 font-semibold text-slate-800">
+                <Home size={18} aria-hidden="true" />
+                Dashboard
+              </button>
+            </div>
+            <div className="grid gap-0 lg:grid-cols-[340px_1fr]">
+              <aside className="border-b border-slate-200 p-5 lg:border-b-0 lg:border-r">
+                <button onClick={() => loadUserAttempts()} className="mb-4 flex w-full items-center justify-center gap-2 rounded-md bg-blue-700 px-4 py-3 font-semibold text-white">
+                  <History size={18} aria-hidden="true" />
+                  Refresh Histori
+                </button>
+                <div className="space-y-3">
+                  {userAttempts.length === 0 ? <p className="text-sm text-slate-600">Belum ada histori pengerjaan.</p> : null}
+                  {userAttempts.map((attempt) => (
+                    <button
+                      key={attempt.id}
+                      onClick={() => setSelectedUserAttempt(attempt)}
+                      className={`w-full rounded-lg border p-3 text-left ${selectedUserAttempt?.id === attempt.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-white'}`}
+                    >
+                      <p className="font-bold text-slate-950">{attempt.exam_title}</p>
+                      <p className="mt-1 text-xs text-slate-500">{formatDateTime(attempt.finished_at)}</p>
+                      <p className="mt-2 inline-flex rounded-md bg-blue-700 px-3 py-1 text-sm font-bold text-white">Skor {attempt.score}</p>
+                    </button>
+                  ))}
+                </div>
+              </aside>
+              <div className="p-5">
+                {selectedUserAttempt ? <HistoryDetail attempt={selectedUserAttempt} /> : <p className="rounded-lg border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">Pilih salah satu histori untuk melihat koreksi jawaban.</p>}
+              </div>
+            </div>
+          </section>
+        </main>
+      </Shell>
+    );
+  }
+
+  if (page === screen.PROFILE) {
+    return (
+      <Shell centered>
+        <section className="w-full max-w-lg rounded-lg border border-slate-200 bg-white p-6 shadow-soft sm:p-8">
+          <div className="mb-6">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-md bg-blue-600 text-white">
+              <User size={25} aria-hidden="true" />
+            </div>
+            <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-700">Profile Regu</p>
+            <h1 className="mt-2 text-2xl font-bold text-slate-950">Data Akun</h1>
+            <p className="mt-1 text-sm text-slate-600">{userSession?.user?.email}</p>
+          </div>
+          <form className="space-y-4" onSubmit={saveProfile}>
             <label className="block">
               <span className="text-sm font-semibold text-slate-700">Nama regu</span>
               <input
                 required
-                value={participant.name}
-                onChange={(event) => setParticipant((value) => ({ ...value, name: event.target.value }))}
+                value={userAuth.team_name}
+                onChange={(event) => setUserAuth((value) => ({ ...value, team_name: event.target.value }))}
                 className="mt-2 w-full rounded-md border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
-                placeholder="Contoh: Regu Garuda"
               />
             </label>
             <label className="block">
               <span className="text-sm font-semibold text-slate-700">Nomor regu</span>
               <input
                 required
-                value={participant.number}
-                onChange={(event) => setParticipant((value) => ({ ...value, number: event.target.value }))}
+                value={userAuth.team_number}
+                onChange={(event) => setUserAuth((value) => ({ ...value, team_number: event.target.value }))}
                 className="mt-2 w-full rounded-md border border-slate-300 px-4 py-3 text-slate-900 outline-none transition focus:border-blue-600 focus:ring-4 focus:ring-blue-100"
-                placeholder="Contoh: 01"
               />
             </label>
-            <button className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-700 px-4 py-3 font-semibold text-white transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-200">
-              <LogIn size={19} aria-hidden="true" />
-              Masuk
+            {userMessage ? <p className="rounded-md bg-slate-50 p-3 text-sm leading-6 text-slate-600">{userMessage}</p> : null}
+            <button className="flex w-full items-center justify-center gap-2 rounded-md bg-blue-700 px-4 py-3 font-semibold text-white">
+              <Save size={18} aria-hidden="true" />
+              Simpan Profile
+            </button>
+            <button type="button" onClick={() => setPage(screen.DASHBOARD)} className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 px-4 py-3 font-semibold text-slate-800">
+              <Home size={18} aria-hidden="true" />
+              Kembali ke Dashboard
             </button>
           </form>
         </section>
@@ -819,7 +1277,14 @@ function App() {
               Lihat Koreksi Jawaban
             </button>
             <button
-              onClick={restart}
+              onClick={() => setPage(screen.DASHBOARD)}
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-800 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-blue-100 sm:w-auto"
+            >
+              <Home size={18} aria-hidden="true" />
+              Kembali ke Dashboard
+            </button>
+            <button
+              onClick={() => restart()}
               className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-800 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-blue-100 sm:w-auto"
             >
               <RotateCcw size={18} aria-hidden="true" />
@@ -870,6 +1335,7 @@ function App() {
               <span className="min-w-[78px] text-right font-mono text-sm font-bold sm:text-base">{formatTime(secondsLeft)}</span>
             </div>
           </div>
+          {draftStatus ? <p className="border-t border-blue-100 bg-blue-50 px-4 py-2 text-right text-xs font-semibold text-blue-800 lg:px-6">{draftStatus}</p> : null}
         </header>
 
         <div className="grid flex-1 lg:grid-cols-[280px_1fr]">
