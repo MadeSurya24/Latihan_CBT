@@ -29,6 +29,7 @@ import { examConfig as localExamConfig, questions as localQuestions } from './qu
 import { isSupabaseConfigured, supabase } from './supabaseClient.js';
 
 const HISTORY_STORAGE_KEY = 'cbt-bank-soal-local-attempts';
+const DRAFT_STORAGE_KEY = 'cbt-bank-soal-drafts';
 
 const screen = {
   LOGIN: 'login',
@@ -113,6 +114,43 @@ function getLocalAttempts() {
   } catch {
     return [];
   }
+}
+
+function getDraftKey(userId, examId) {
+  return `${userId || 'guest'}::${examId || 'unknown'}`;
+}
+
+function getLocalDrafts() {
+  try {
+    return JSON.parse(window.localStorage.getItem(DRAFT_STORAGE_KEY) || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function getLocalDraft(userId, examId) {
+  return getLocalDrafts()[getDraftKey(userId, examId)] || null;
+}
+
+function saveLocalDraft(draft) {
+  if (!draft?.user_id || !draft?.exam_id) return;
+  const drafts = getLocalDrafts();
+  drafts[getDraftKey(draft.user_id, draft.exam_id)] = draft;
+  window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
+}
+
+function removeLocalDraft(userId, examId) {
+  const drafts = getLocalDrafts();
+  delete drafts[getDraftKey(userId, examId)];
+  window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
+}
+
+function getNewestDraft(localDraft, remoteDraft) {
+  if (!localDraft) return remoteDraft || null;
+  if (!remoteDraft) return localDraft;
+  const localTime = new Date(localDraft.updated_at || localDraft.created_at || 0).getTime();
+  const remoteTime = new Date(remoteDraft.updated_at || remoteDraft.created_at || 0).getTime();
+  return localTime >= remoteTime ? localDraft : remoteDraft;
 }
 
 function calculateResult(questionBank, answers) {
@@ -249,14 +287,35 @@ function App() {
   }, [page, secondsLeft]);
 
   useEffect(() => {
-    if (page !== screen.EXAM || !userSession || !isSupabaseConfigured || selectedExamId === 'legacy' || selectedExamId === 'local-day-10') {
+    if (page !== screen.EXAM || !userSession || !currentQuestion) {
+      return undefined;
+    }
+    const payload = buildDraftPayload();
+    saveLocalDraft(payload);
+    setActiveDraft(payload);
+    setDraftStatus(`Tersimpan di perangkat ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`);
+    if (!isSupabaseConfigured || selectedExamId === 'legacy' || selectedExamId === 'local-day-10') {
       return undefined;
     }
     const timeout = window.setTimeout(() => {
-      saveDraft();
+      syncDraftToSupabase(payload);
     }, 700);
     return () => window.clearTimeout(timeout);
-  }, [page, userSession, selectedExamId, currentIndex, answers, doubtful, examStartedAt]);
+  }, [page, userSession?.user?.id, selectedExamId, currentIndex, answers, doubtful, examStartedAt, participant.name, participant.number, userProfile.team_name, userProfile.team_number, currentQuestion?.id]);
+
+  useEffect(() => {
+    if (!userSession || loadingData) return;
+    loadDraftForExam(selectedExamId, userSession.user.id);
+  }, [userSession?.user?.id, selectedExamId, loadingData]);
+
+  useEffect(() => {
+    if (page !== screen.EXAM || !userSession || !currentQuestion) return undefined;
+    const handleBeforeUnload = () => {
+      saveLocalDraft(buildDraftPayload());
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [page, userSession?.user?.id, selectedExamId, currentIndex, answers, doubtful, examStartedAt, participant.name, participant.number, userProfile.team_name, userProfile.team_number, currentQuestion?.id]);
 
   const summary = useMemo(() => calculateResult(questionBank, answers), [answers, questionBank]);
 
@@ -400,8 +459,10 @@ function App() {
   }
 
   async function loadDraftForExam(examId = selectedExamId, userId = userSession?.user?.id) {
-    setActiveDraft(null);
-    if (!isSupabaseConfigured || !userId || examId === 'legacy' || examId === 'local-day-10') return null;
+    if (!userId || !examId) return null;
+    const localDraft = getLocalDraft(userId, examId);
+    setActiveDraft(localDraft);
+    if (!isSupabaseConfigured || examId === 'legacy' || examId === 'local-day-10') return localDraft;
     const { data, error } = await supabase
       .from('attempt_drafts')
       .select('*')
@@ -409,11 +470,18 @@ function App() {
       .eq('exam_id', examId)
       .maybeSingle();
     if (error) {
-      setUserMessage(`Gagal membaca draft: ${error.message}`);
-      return null;
+      setDraftStatus(localDraft ? 'Draft dipulihkan dari perangkat ini.' : `Gagal membaca draft: ${error.message}`);
+      return localDraft;
     }
-    setActiveDraft(data || null);
-    return data || null;
+    const newestDraft = getNewestDraft(localDraft, data);
+    setActiveDraft(newestDraft);
+    if (newestDraft) {
+      saveLocalDraft(newestDraft);
+      if (newestDraft === localDraft && (!data || new Date(localDraft.updated_at || 0) > new Date(data.updated_at || 0))) {
+        syncDraftToSupabase(localDraft);
+      }
+    }
+    return newestDraft;
   }
 
   async function userSignIn(event) {
@@ -519,30 +587,55 @@ function App() {
     setUserMessage('Profile berhasil disimpan.');
   }
 
-  async function saveDraft() {
-    if (!userSession || !currentQuestion) return;
+  function buildDraftPayload() {
+    const now = new Date().toISOString();
+    return {
+      user_id: userSession.user.id,
+      exam_id: selectedExamId,
+      team_name: participant.name || userProfile.team_name || '',
+      team_number: participant.number || userProfile.team_number || '',
+      started_at: examStartedAt || now,
+      current_index: currentIndex,
+      answers,
+      doubtful,
+      updated_at: now,
+    };
+  }
+
+  function saveDraftSnapshot(overrides = {}) {
+    if (!userSession || !selectedExamId) return;
+    const now = new Date().toISOString();
     const payload = {
       user_id: userSession.user.id,
       exam_id: selectedExamId,
       team_name: participant.name || userProfile.team_name || '',
       team_number: participant.number || userProfile.team_number || '',
-      started_at: examStartedAt || new Date().toISOString(),
-      current_index: currentIndex,
-      answers,
-      doubtful,
-      updated_at: new Date().toISOString(),
+      started_at: examStartedAt || now,
+      current_index: overrides.currentIndex ?? currentIndex,
+      answers: overrides.answers ?? answers,
+      doubtful: overrides.doubtful ?? doubtful,
+      updated_at: now,
     };
+    saveLocalDraft(payload);
+    setActiveDraft(payload);
+    setDraftStatus(`Tersimpan di perangkat ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`);
+  }
+
+  async function syncDraftToSupabase(payload) {
+    if (!payload || !isSupabaseConfigured || payload.exam_id === 'legacy' || payload.exam_id === 'local-day-10') return payload;
     const { data, error } = await supabase
       .from('attempt_drafts')
       .upsert(payload, { onConflict: 'user_id,exam_id' })
       .select('*')
       .single();
     if (error) {
-      setDraftStatus(`Autosave gagal: ${error.message}`);
-      return;
+      setDraftStatus(`Tersimpan di perangkat, gagal sinkron Supabase: ${error.message}`);
+      return payload;
     }
+    saveLocalDraft(data);
     setActiveDraft(data);
     setDraftStatus(`Tersimpan otomatis ${new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`);
+    return data;
   }
 
   async function beginAttempt(resume = false) {
@@ -568,6 +661,12 @@ function App() {
       setCurrentIndex(Math.min(draft.current_index || 0, Math.max(questionBank.length - 1, 0)));
       setExamStartedAt(draft.started_at || new Date().toISOString());
     } else {
+      if (userSession) {
+        removeLocalDraft(userSession.user.id, selectedExamId);
+        if (isSupabaseConfigured && selectedExamId !== 'legacy' && selectedExamId !== 'local-day-10') {
+          await supabase.from('attempt_drafts').delete().eq('user_id', userSession.user.id).eq('exam_id', selectedExamId);
+        }
+      }
       setAnswers({});
       setDoubtful({});
       setCurrentIndex(0);
@@ -630,18 +729,24 @@ function App() {
       setSecondsLeft(totalSeconds);
       setExamStartedAt(new Date().toISOString());
     }
+    saveDraftSnapshot();
   }
 
   function chooseAnswer(optionKey) {
-    setAnswers((previous) => ({ ...previous, [currentQuestion.id]: optionKey }));
+    const nextAnswers = { ...answers, [currentQuestion.id]: optionKey };
+    setAnswers(nextAnswers);
+    saveDraftSnapshot({ answers: nextAnswers });
   }
 
   function toggleDoubtful() {
-    setDoubtful((previous) => ({ ...previous, [currentQuestion.id]: !previous[currentQuestion.id] }));
+    const nextDoubtful = { ...doubtful, [currentQuestion.id]: !doubtful[currentQuestion.id] };
+    setDoubtful(nextDoubtful);
+    saveDraftSnapshot({ doubtful: nextDoubtful });
   }
 
   function goToQuestion(index) {
     setCurrentIndex(index);
+    saveDraftSnapshot({ currentIndex: index });
     setShowMobilePanel(false);
   }
 
@@ -678,8 +783,11 @@ function App() {
     if (isSupabaseConfigured) {
       const { error } = await supabase.from('attempts').insert(payload);
       setSaveStatus(error ? `Hasil tampil, tetapi gagal tersimpan ke Supabase: ${error.message}` : 'Hasil berhasil tersimpan ke database.');
-      if (!error && userSession && selectedExamId !== 'legacy' && selectedExamId !== 'local-day-10') {
-        await supabase.from('attempt_drafts').delete().eq('user_id', userSession.user.id).eq('exam_id', selectedExamId);
+      if (!error && userSession) {
+        removeLocalDraft(userSession.user.id, selectedExamId);
+        if (selectedExamId !== 'legacy' && selectedExamId !== 'local-day-10') {
+          await supabase.from('attempt_drafts').delete().eq('user_id', userSession.user.id).eq('exam_id', selectedExamId);
+        }
         setActiveDraft(null);
         await loadUserAttempts(userSession.user.id);
       }
