@@ -1392,8 +1392,20 @@ function App() {
         <main className="mx-auto flex min-h-screen w-full max-w-5xl items-center px-4 py-8">
           <section className="w-full rounded-lg border border-slate-200 bg-white shadow-soft">
             <div className="border-b border-slate-200 p-5 sm:p-7">
-              <p className="text-sm font-semibold text-blue-700">{settings.subject}</p>
-              <h1 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl">{settings.title}</h1>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold text-blue-700">{settings.subject}</p>
+                  <h1 className="mt-2 text-2xl font-bold text-slate-950 sm:text-3xl">{settings.title}</h1>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPage(userSession ? screen.DASHBOARD : screen.LOGIN)}
+                  className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-800 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-blue-100 sm:w-auto"
+                >
+                  <ArrowLeft size={18} aria-hidden="true" />
+                  Kembali
+                </button>
+              </div>
               <div className="mt-4 grid gap-3 text-sm text-slate-600 sm:grid-cols-3">
                 <Info label="Regu" value={participant.name} />
                 <Info label="Nomor Regu" value={participant.number} />
@@ -1425,6 +1437,14 @@ function App() {
                 >
                   Mulai Ujian
                   <ArrowRight size={18} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPage(userSession ? screen.DASHBOARD : screen.LOGIN)}
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-md border border-blue-200 bg-white px-4 py-3 font-semibold text-blue-800 transition hover:bg-blue-100 focus:outline-none focus:ring-4 focus:ring-blue-100"
+                >
+                  <ArrowLeft size={18} aria-hidden="true" />
+                  Kembali ke Dashboard
                 </button>
               </aside>
             </div>
