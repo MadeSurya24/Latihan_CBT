@@ -2177,8 +2177,10 @@ function HistoryDetail({ attempt }) {
 
 function Shell({ centered = false, children }) {
   return (
-    <div className={centered ? 'flex min-h-screen items-center justify-center bg-slate-100 p-4' : 'min-h-screen bg-slate-100'}>
-      {children}
+    <div className={centered ? 'flex min-h-screen flex-col bg-slate-100 p-4' : 'flex min-h-screen flex-col bg-slate-100'}>
+      <div className={centered ? 'flex flex-1 items-center justify-center' : 'flex-1'}>
+        {children}
+      </div>
       <Watermark />
     </div>
   );
@@ -2186,15 +2188,19 @@ function Shell({ centered = false, children }) {
 
 function Watermark() {
   return (
-    <a
-      href="https://www.instagram.com/imaddd24_/"
-      target="_blank"
-      rel="noreferrer"
-      className="fixed bottom-3 right-3 z-[60] rounded-md border border-slate-200 bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-500 shadow-sm backdrop-blur transition hover:border-blue-200 hover:text-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100"
-      aria-label="Buka Instagram MadeSurya24"
-    >
-      Web by MadeSurya24
-    </a>
+    <footer className="w-full px-4 py-3">
+      <div className="mx-auto flex w-full max-w-7xl justify-end">
+        <a
+          href="https://www.instagram.com/imaddd24_/"
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:border-blue-200 hover:text-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100"
+          aria-label="Buka Instagram MadeSurya24"
+        >
+          Web by MadeSurya24
+        </a>
+      </div>
+    </footer>
   );
 }
 
