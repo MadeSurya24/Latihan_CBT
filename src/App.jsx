@@ -5,6 +5,7 @@ import {
   ArrowRight,
   BookOpen,
   CheckCircle2,
+  Chrome,
   Clock3,
   Database,
   Eye,
@@ -156,6 +157,10 @@ function getNewestDraft(localDraft, remoteDraft) {
   const localTime = new Date(localDraft.updated_at || localDraft.created_at || 0).getTime();
   const remoteTime = new Date(remoteDraft.updated_at || remoteDraft.created_at || 0).getTime();
   return localTime >= remoteTime ? localDraft : remoteDraft;
+}
+
+function isProfileComplete(profile) {
+  return Boolean(profile?.team_name?.trim() && profile?.team_number?.trim());
 }
 
 function calculateResult(questionBank, answers) {
@@ -336,7 +341,7 @@ function App() {
     }
 
     setUserSession(data.session);
-    await loadUserProfile(data.session.user);
+    const profile = await loadUserProfile(data.session.user);
     await loadUserAttempts(data.session.user.id);
     setAdminSession(data.session);
     await checkAdminAccess(data.session.user);
@@ -348,6 +353,11 @@ function App() {
       setUserMessage(`Draft terakhir ditemukan pada ${formatDateTime(latestDraft.updated_at)}. Tekan "Lanjutkan Pengerjaan" untuk kembali.`);
     } else {
       await loadDraftForExam(loadedExamId, data.session.user.id);
+    }
+    if (!isProfileComplete(profile)) {
+      setUserMessage('Login berhasil. Lengkapi nama regu dan nomor regu terlebih dahulu.');
+      setPage(screen.PROFILE);
+      return;
     }
     setPage(screen.DASHBOARD);
   }
@@ -462,7 +472,7 @@ function App() {
     const { data } = await supabase.auth.getSession();
     if (data.session) {
       setUserSession(data.session);
-      await loadUserProfile(data.session.user);
+      const profile = await loadUserProfile(data.session.user);
       await loadUserAttempts(data.session.user.id);
       setAdminSession(data.session);
       await checkAdminAccess(data.session.user);
@@ -471,10 +481,10 @@ function App() {
         await loadPublicData(latestDraft.exam_id);
         setActiveDraft(latestDraft);
         setUserMessage(`Draft terakhir ditemukan pada ${formatDateTime(latestDraft.updated_at)}. Tekan "Lanjutkan Pengerjaan" untuk kembali.`);
-        setPage(screen.DASHBOARD);
+        setPage(isProfileComplete(profile) ? screen.DASHBOARD : screen.PROFILE);
         return;
       }
-      setPage(screen.DASHBOARD);
+      setPage(isProfileComplete(profile) ? screen.DASHBOARD : screen.PROFILE);
       await loadDraftForExam(selectedExamId, data.session.user.id);
     }
   }
@@ -504,6 +514,7 @@ function App() {
     }
     setUserProfile(inserted);
     setParticipant({ name: inserted.team_name || '', number: inserted.team_number || '' });
+    setUserAuth((value) => ({ ...value, team_name: inserted.team_name || '', team_number: inserted.team_number || '' }));
     return inserted;
   }
 
@@ -563,9 +574,14 @@ function App() {
       return;
     }
     setUserSession(data.session);
-    await loadUserProfile(data.user);
+    const profile = await loadUserProfile(data.user);
     await loadUserAttempts(data.user.id);
     await checkAdminAccess(data.user);
+    if (!isProfileComplete(profile)) {
+      setUserMessage('Login berhasil. Lengkapi nama regu dan nomor regu terlebih dahulu.');
+      setPage(screen.PROFILE);
+      return;
+    }
     const latestDraft = await loadLatestDraftForUser(data.user.id);
     if (latestDraft?.exam_id) {
       await loadPublicData(latestDraft.exam_id);
@@ -576,6 +592,23 @@ function App() {
       setUserMessage('');
     }
     setPage(screen.DASHBOARD);
+  }
+
+  async function userSignInWithGoogle() {
+    if (!isSupabaseConfigured) {
+      setUserMessage('Supabase belum aktif, login Google belum bisa digunakan.');
+      return;
+    }
+    setUserMessage('Membuka login Google...');
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/`,
+      },
+    });
+    if (error) {
+      setUserMessage(error.message);
+    }
   }
 
   async function userSignUp() {
@@ -1115,6 +1148,19 @@ function App() {
           </div>
 
           <form className="space-y-4" onSubmit={userSignIn}>
+            <button
+              type="button"
+              onClick={userSignInWithGoogle}
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-300 bg-white px-4 py-3 font-semibold text-slate-800 transition hover:bg-slate-50 focus:outline-none focus:ring-4 focus:ring-blue-100"
+            >
+              <Chrome size={18} aria-hidden="true" />
+              Masuk dengan Google
+            </button>
+            <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+              <span className="h-px flex-1 bg-slate-200" />
+              <span>Email lama</span>
+              <span className="h-px flex-1 bg-slate-200" />
+            </div>
             <label className="block">
               <span className="text-sm font-semibold text-slate-700">Email regu</span>
               <input
