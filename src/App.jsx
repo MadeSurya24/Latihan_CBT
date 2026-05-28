@@ -1168,7 +1168,7 @@ function App() {
             </button>
             <div className="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
               <span className="h-px flex-1 bg-slate-200" />
-              <span>Email lama</span>
+              <span>Email</span>
               <span className="h-px flex-1 bg-slate-200" />
             </div>
             <label className="block">
