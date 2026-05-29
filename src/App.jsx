@@ -38,10 +38,14 @@ const screen = {
   PROFILE: 'profile',
   INSTRUCTIONS: 'instructions',
   EXAM: 'exam',
+  THANK_YOU: 'thank-you',
   RESULT: 'result',
   REVIEW: 'review',
   ADMIN: 'admin',
 };
+
+const LAST_DAY_EXAM_TITLE = 'SIMULASI LAST DAY JUST FRIENDS OR ALWAYS JUST FRIENDS';
+const LAST_DAY_THANK_YOU_IMAGE = '/images/last-day-thank-you.jpeg';
 
 const emptyQuestionForm = {
   id: null,
@@ -160,6 +164,10 @@ function getNewestDraft(localDraft, remoteDraft) {
 
 function isProfileComplete(profile) {
   return Boolean(profile?.team_name?.trim() && profile?.team_number?.trim());
+}
+
+function shouldShowLastDayThankYou(title) {
+  return title?.trim().toLowerCase() === LAST_DAY_EXAM_TITLE.toLowerCase();
 }
 
 function GoogleLogo({ size = 20 }) {
@@ -923,7 +931,7 @@ function App() {
 
     setResult(finalResult);
     setShowSubmitConfirm(false);
-    setPage(screen.RESULT);
+    setPage(shouldShowLastDayThankYou(settings.title) ? screen.THANK_YOU : screen.RESULT);
   }
 
   function restart(goLogin = true) {
@@ -1555,6 +1563,31 @@ function App() {
               Ulangi Simulasi
             </button>
           </div>
+        </section>
+      </Shell>
+    );
+  }
+
+  if (page === screen.THANK_YOU && result) {
+    return (
+      <Shell centered>
+        <section className="flex max-h-[calc(100vh-6rem)] w-full max-w-4xl flex-col items-center overflow-y-auto rounded-lg border border-slate-200 bg-white p-4 text-center shadow-soft sm:p-6">
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-blue-700">SIMULASI LAST DAY</p>
+          <h1 className="mt-2 text-3xl font-bold text-slate-950 sm:text-4xl">Terimakasih</h1>
+          <div className="mt-5 flex w-full justify-center overflow-hidden rounded-lg bg-slate-100">
+            <img
+              src={LAST_DAY_THANK_YOU_IMAGE}
+              alt="Ucapan terimakasih setelah submit"
+              className="max-h-[64vh] w-auto max-w-full object-contain"
+            />
+          </div>
+          <button
+            onClick={() => setPage(screen.RESULT)}
+            className="mt-5 flex w-full items-center justify-center gap-2 rounded-md bg-blue-700 px-4 py-3 font-semibold text-white transition hover:bg-blue-800 focus:outline-none focus:ring-4 focus:ring-blue-200 sm:w-auto sm:min-w-40"
+          >
+            Next
+            <ArrowRight size={18} aria-hidden="true" />
+          </button>
         </section>
       </Shell>
     );
